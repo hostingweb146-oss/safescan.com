@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="km">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>AegisGuard Mobile - Cam Sweeper</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@400;600;700&family=Orbitron:wght@700;900&family=Noto+Sans+Khmer:wght@400;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg: #030712;
+      --card: #0f172a;
+      --cyan: #00f2fe;
+      --cyan-glow: rgba(0, 242, 254, 0.4);
+      --red: #ff2a5f;
+      --red-glow: rgba(255, 42, 95, 0.6);
+      --green: #10b981;
+      --text: #ffffff;
+      --text-dim: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Kantumruy Pro', -apple-system, sans-serif;
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0.75rem;
+      overflow-x: hidden;
+    }
+
+    .font-hud {
+      font-family: 'Orbitron', 'Noto Sans Khmer', monospace;
+      letter-spacing: 0.5px;
+    }
+
+    /* Top App Header */
+    header {
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+      margin: 0.4rem 0 0.8rem;
+    }
+
+    .brand-title {
+      font-size: 1.35rem;
+      font-weight: 900;
+      background: linear-gradient(135deg, var(--cyan), #38bdf8);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .brand-desc {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    .privacy-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 4px;
+      padding: 2px 10px;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid var(--green);
+      border-radius: 20px;
+      font-size: 0.68rem;
+      color: var(--green);
+    }
+
+    /* Mobile Container Layout */
+    .app-viewport {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+
+    /* Camera Viewfinder Box */
+    .viewfinder {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      background: #000;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(0, 242, 254, 0.25);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      pointer-events: none;
+    }
+
+    canvas#detectionCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    /* Universal Mobile Fullscreen Mode */
+    .viewfinder.mobile-fullscreen {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100vw !important;
+      height: 100dvh !important;
+      max-width: none !important;
+      border-radius: 0 !important;
+      border: none !important;
+      z-index: 9999 !important;
+      aspect-ratio: auto !important;
+    }
+
+    /* Target Box (DOM Layer) */
+    .target-marker {
+      position: absolute;
+      width: 52px;
+      height: 52px;
+      border: 2px solid var(--red);
+      box-shadow: 0 0 16px var(--red-glow);
+      border-radius: 8px;
+      pointer-events: none;
+      display: none;
+      z-index: 15;
+      transform: translate(-50%, -50%);
+    }
+
+    .target-marker::before {
+      content: "LENS DETECTED";
+      position: absolute;
+      top: -18px;
+      left: -2px;
+      font-family: 'Orbitron', monospace;
+      font-size: 8px;
+      font-weight: 700;
+      color: #fff;
+      background: var(--red);
+      padding: 1px 5px;
+      border-radius: 2px;
+      white-space: nowrap;
+    }
+
+    /* HUD Reticle Overlay */
+    .hud-layer {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 5;
+    }
+
+    .reticle-ring {
+      width: 130px;
+      height: 130px;
+      border: 1.5px dashed var(--cyan);
+      border-radius: 50%;
+      animation: sweepSpin 12s linear infinite;
+    }
+
+    @keyframes sweepSpin {
+      100% { transform: rotate(360deg); }
+    }
+
+    .laser-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+      box-shadow: 0 0 12px var(--cyan);
+      top: 0;
+      opacity: 0;
+    }
+
+    .active-scan .laser-line {
+      opacity: 1;
+      animation: laserSweep 2.5s ease-in-out infinite;
+    }
+
+    @keyframes laserSweep {
+      0% { top: 0%; opacity: 0; }
+      20% { opacity: 1; }
+      80% { opacity: 1; }
+      100% { top: 100%; opacity: 0; }
+    }
+
+    /* Mobile In-Scanner Top Bar */
+    .fs-header {
+      position: absolute;
+      top: env(safe-area-inset-top, 14px);
+      left: 12px;
+      right: 12px;
+      display: none;
+      justify-content: space-between;
+      z-index: 25;
+    }
+
+    .mobile-fullscreen .fs-header {
+      display: flex;
+    }
+
+    .btn-fs-pill {
+      background: rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.25);
+      color: #fff;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+    }
+
+    /* SMART ANSWER & DIAGNOSTIC CARD (លោតលើ Screen ពេលចាប់បាន) */
+    .solution-card {
+      position: absolute;
+      bottom: calc(env(safe-area-inset-bottom, 16px) + 20px);
+      left: 12px;
+      right: 12px;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1.5px solid var(--red);
+      box-shadow: 0 0 25px var(--red-glow);
+      border-radius: 14px;
+      padding: 12px;
+      display: none;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 35;
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+    }
+
+    .solution-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .solution-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--red);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .threat-tag {
+      font-size: 0.65rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: rgba(255, 42, 95, 0.2);
+      border: 1px solid var(--red);
+      color: #ff99b3;
+      font-weight: 700;
+    }
+
+    .solution-text {
+      font-size: 0.78rem;
+      color: #f1f5f9;
+      line-height: 1.35;
+    }
+
+    .solution-action {
+      font-size: 0.74rem;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 6px 8px;
+      border-radius: 6px;
+      border-left: 3px solid var(--cyan);
+      color: #e2e8f0;
+    }
+
+    /* Controls Grid */
+    .controls-deck {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    button {
+      font-family: 'Kantumruy Pro', 'Noto Sans Khmer', 'Khmer OS', 'Hanuman', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.75rem;
+      border-radius: 10px;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-main {
+      background: linear-gradient(135deg, var(--cyan), #0284c7);
+      color: #030712;
+      font-weight: 700;
+      grid-column: span 2;
+      box-shadow: 0 4px 15px var(--cyan-glow);
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: var(--text);
+    }
+
+    .btn-secondary.active {
+      background: rgba(0, 242, 254, 0.18);
+      border-color: var(--cyan);
+      color: var(--cyan);
+    }
+
+    .btn-stop {
+      background: rgba(255, 42, 95, 0.15);
+      border: 1px solid var(--red);
+      color: #fca5a5;
+      grid-column: span 2;
+    }
+
+    /* Settings & Sensitivity Options */
+    .settings-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.03);
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      font-size: 0.78rem;
+    }
+
+    .sensitivity-select {
+      background: #1e293b;
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 0.75rem;
+    }
+
+    /* Real-Time Detection History Logs */
+    .log-card {
+      background: var(--card);
+      border-radius: 14px;
+      padding: 1rem;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .log-title {
+      font-size: 0.85rem;
+      color: var(--cyan);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+
+    .log-list {
+      list-style: none;
+      max-height: 120px;
+      overflow-y: auto;
+      font-size: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .log-item {
+      padding: 6px 8px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 6px;
+      border-left: 2px solid var(--red);
+      display: flex;
+      justify-content: space-between;
+      color: #cbd5e1;
+    }
+
+    .log-count {
+      color: var(--text-dim);
+    }
+
+    .empty-log {
+      color: var(--text-dim);
+      text-align: center;
+      padding: 10px 0;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand-title font-hud">AEGIS CAM DEFENSE</div>
+    <div class="brand-desc">Optical Sweeper & Room Analyzer • ស្កេនកាមេរ៉ាសម្ងាត់</div>
+    <div class="privacy-tag">
+      ✓ សុវត្ថិភាពខ្ពស់: Client-Side Only (គ្មានការ Upload រូបភាព)
+    </div>
+  </header>
+
+  <main class="app-viewport">
+    <!-- Camera Viewport Box -->
+    <div class="viewfinder" id="viewfinder">
+      <video id="cameraStream" autoplay muted></video>
+      <canvas id="detectionCanvas"></canvas>
+      <div class="target-marker" id="targetMarker"></div>
+
+      <!-- Reticle Animation Layer -->
+      <div class="hud-layer">
+        <div class="laser-line"></div>
+        <div class="reticle-ring"></div>
+      </div>
+
+      <!-- In-Scanner Fullscreen Header -->
+      <div class="fs-header">
+        <button class="btn-fs-pill" id="fsBackBtn">← Back / ត្រឡប់ក្រោយ</button>
+        <button class="btn-fs-pill" id="fsTorchBtn">Flashlight / ពិល</button>
+      </div>
+
+      <!-- SMART ANSWER & DIAGNOSTIC HUD (ប្រាប់ចម្លើយលើ SCREEN) -->
+      <div class="solution-card" id="solutionCard">
+        <div class="solution-header">
+          <div class="solution-title font-hud">
+            ⚠ CAMERA LENS IDENTIFIED
+          </div>
+          <div class="threat-tag" id="threatBadge">HIGH THREAT 92%</div>
+        </div>
+        <div class="solution-text" id="solutionDiagnosis">
+          បានប្រទះឃើញពន្លឺផ្លាតកញ្ចក់លេន (Lens Optical Glint) នៅចំកណ្តាលទិសដៅ។
+        </div>
+        <div class="solution-action" id="solutionAction">
+          <strong>វិធីដោះស្រាយ:</strong> ចូលទៅជិតចំណុចក្រហម រួចយកស្កុតបិទ ឬគ្របកន្សែងពីលើភ្លាមៗ។
+        </div>
+      </div>
+    </div>
+
+    <!-- Sensitivity Setting -->
+    <div class="settings-bar">
+      <span>កម្រិតរំញោច (Sensitivity):</span>
+      <select id="sensitivitySelect" class="sensitivity-select" aria-label="Sensitivity level" title="Sensitivity level">
+        <option value="low">Low (កាត់បន្ថយការច្រឡំ)</option>
+        <option value="medium" selected>Medium (ណែនាំទូទៅ)</option>
+        <option value="high">High (បន្ទប់ងងឹតសូន្យ)</option>
+      </select>
+    </div>
+
+    <!-- Controls Deck -->
+    <div class="controls-deck">
+      <button class="btn-main font-hud" id="startBtn">
+        ▶ START FULLSCREEN SCAN / បើកស្កេន
+      </button>
+      <button class="btn-secondary" id="irEnhanceBtn" disabled>
+        IR Filter Mode
+      </button>
+      <button class="btn-secondary" id="torchBtn" disabled>
+        Torch / ពិល
+      </button>
+      <button class="btn-stop" id="stopBtn" disabled>
+        STOP / បិទកាមេរ៉ា
+      </button>
+    </div>
+
+    <!-- History Log Table -->
+    <div class="log-card">
+      <div class="log-title font-hud">
+        <span>DETECTION LOG (ប្រវត្តិចាប់បាន)</span>
+        <span id="logCount" class="log-count">0 Records</span>
+      </div>
+      <ul class="log-list" id="logList">
+        <li class="empty-log">គ្មានទិន្នន័យសង្ស័យនៅឡើយ</li>
+      </ul>
+    </div>
+  </main>
+
+  <script>
+    const viewfinder = document.getElementById('viewfinder');
+    const video = document.getElementById('cameraStream');
+    video.setAttribute('playsinline', 'true');
+    const canvas = document.getElementById('detectionCanvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const targetMarker = document.getElementById('targetMarker');
+    
+    // Diagnostic HUD Elements
+    const solutionCard = document.getElementById('solutionCard');
+    const threatBadge = document.getElementById('threatBadge');
+    const solutionDiagnosis = document.getElementById('solutionDiagnosis');
+    const solutionAction = document.getElementById('solutionAction');
+    const sensitivitySelect = document.getElementById('sensitivitySelect');
+    const logList = document.getElementById('logList');
+    const logCount = document.getElementById('logCount');
+
+    // Controls
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const fsBackBtn = document.getElementById('fsBackBtn');
+    const irEnhanceBtn = document.getElementById('irEnhanceBtn');
+    const torchBtn = document.getElementById('torchBtn');
+    const fsTorchBtn = document.getElementById('fsTorchBtn');
+
+    let stream = null;
+    let videoTrack = null;
+    let isScanning = false;
+    let isTorchActive = false;
+    let isIrActive = false;
+    let lastAlertTime = 0;
+    let audioCtx = null;
+    let recordedLogs = 0;
+    const STORAGE_KEY = 'aegisCamDefenseState';
+
+    function saveState() {
+      try {
+        const state = {
+          sensitivity: sensitivitySelect.value,
+          recordedLogs,
+          logEntries: Array.from(logList.children).map(item => item.outerHTML),
+          isIrActive,
+          isTorchActive
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (err) {
+        console.warn('Unable to save page state:', err);
+      }
+    }
+
+    function restoreState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+
+        const state = JSON.parse(raw);
+        if (state.sensitivity) sensitivitySelect.value = state.sensitivity;
+
+        if (Array.isArray(state.logEntries) && state.logEntries.length > 0) {
+          logList.innerHTML = state.logEntries.join('');
+          recordedLogs = Number(state.recordedLogs) || 0;
+          logCount.textContent = `${recordedLogs} Records`;
+        }
+
+        if (state.isIrActive) {
+          isIrActive = true;
+          irEnhanceBtn.classList.add('active');
+          video.style.filter = 'invert(0.95) contrast(260%) brightness(130%) hue-rotate(180deg)';
+        }
+
+        if (state.isTorchActive) {
+          isTorchActive = true;
+          torchBtn.classList.add('active');
+          fsTorchBtn.style.color = 'var(--cyan)';
+        }
+      } catch (err) {
+        console.warn('Unable to restore page state:', err);
+      }
+    }
+
+    // Web Audio Sound Warning
+    function playAlarmBeep() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(950, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.2);
+      } catch (e) {}
+    }
+
+    // Voice Synthesis Guidance
+    function speakWarning(text) {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.1;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+
+    function showCameraError(message) {
+      console.error('Camera Init Error:', message);
+      alert(message);
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      irEnhanceBtn.disabled = true;
+      torchBtn.disabled = true;
+      viewfinder.classList.remove('mobile-fullscreen', 'active-scan');
+    }
+
+    // Start Scanner & Responsive Fullscreen
+    startBtn.addEventListener('click', async () => {
+      const isSecureContext = window.isSecureContext || location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showCameraError('Camera is not supported in this browser. Please use a modern browser with camera access enabled.');
+        return;
+      }
+
+      if (!isSecureContext) {
+        showCameraError('Camera access requires a secure context. Please open the app over HTTPS or use localhost instead of a local file.');
+        return;
+      }
+
+      try {
+        const constraints = {
+          audio: false,
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        videoTrack = stream.getVideoTracks()[0];
+
+        viewfinder.classList.add('mobile-fullscreen', 'active-scan');
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        irEnhanceBtn.disabled = false;
+
+        // Check Torch support
+        const capabilities = videoTrack && videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+        if (capabilities && capabilities.torch) {
+          torchBtn.disabled = false;
+        }
+
+        video.onloadedmetadata = () => {
+          isScanning = true;
+          canvas.width = 160;
+          canvas.height = 120;
+          requestAnimationFrame(runScannerAnalysis);
+        };
+
+      } catch (err) {
+        console.error('Camera Init Error:', err);
+        alert('មិនអាចដំណើរការ Camera បានទេ! សូមប្រាកដថាបានអនុញ្ញាត Camera Permission និងកំពុងបើកលើ HTTPS ឬ localhost។');
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        irEnhanceBtn.disabled = true;
+        torchBtn.disabled = true;
+      }
+    });
+
+    // Optical Lens Analysis & Smart Diagnosis Engine
+    let throttleTimer = 0;
+    function runScannerAnalysis(timestamp) {
+      if (!isScanning) return;
+
+      if (timestamp - throttleTimer > 70) {
+        throttleTimer = timestamp;
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = frame.data;
+        const totalPixels = canvas.width * canvas.height;
+
+        let totalLuma = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          totalLuma += (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+        }
+        const avgLuma = totalLuma / totalPixels;
+
+        // Sensitivity Adjustment
+        let delta = 85;
+        if (sensitivitySelect.value === 'low') delta = 110;
+        if (sensitivitySelect.value === 'high') delta = 65;
+
+        const threshold = Math.min(250, Math.max(225, avgLuma + delta));
+        let detected = null;
+
+        for (let y = 6; y < canvas.height - 6; y += 2) {
+          for (let x = 6; x < canvas.width - 6; x += 2) {
+            const idx = (y * canvas.width + x) * 4;
+            const luma = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+
+            if (luma > threshold) {
+              const rightIdx = idx + 16;
+              const rightLuma = data[rightIdx] * 0.299 + data[rightIdx + 1] * 0.587 + data[rightIdx + 2] * 0.114;
+
+              // Lens specular reflection check (high contrast differential)
+              if (luma - rightLuma > 45) {
+                detected = { x, y, luma, avgLuma };
+                break;
+              }
+            }
+          }
+          if (detected) break;
+        }
+
+        // Answer & Solution Handler
+        if (detected) {
+          const screenX = (detected.x / canvas.width) * 100;
+          const screenY = (detected.y / canvas.height) * 100;
+
+          targetMarker.style.left = `${screenX}%`;
+          targetMarker.style.top = `${screenY}%`;
+          targetMarker.style.display = 'block';
+
+          // Display Diagnostics
+          solutionCard.style.display = 'flex';
+          const threatPercent = Math.min(98, Math.round(75 + (detected.luma - threshold)));
+          threatBadge.textContent = `THREAT ${threatPercent}%`;
+
+          if (isIrActive) {
+            solutionDiagnosis.innerHTML = "<strong>ការវិភាគ:</strong> បានប្រទះឃើញពន្លឺ Infrared LED (កាមេរ៉ា Night-Vision សម្ងាត់)។";
+            solutionAction.innerHTML = "<strong>ចម្លើយ & ដំណោះស្រាយ:</strong> ទីតាំងនេះមានកាមេរ៉ាកំពុងថតនៅពេលយប់។ យកស្កុតខ្មៅ ឬក្រដាសបិទភ្លាមៗ!";
+          } else {
+            solutionDiagnosis.innerHTML = "<strong>ការវិភាគ:</strong> បានប្រទះឃើញពន្លឺផ្លាតកែវលេនកាមេរ៉ា (Pinhole Lens Reflection)។";
+            solutionAction.innerHTML = "<strong>ចម្លើយ & ដំណោះស្រាយ:</strong> សូមពិនិត្យឧបករណ៍សង្ស័យនោះ (រន្ធឌុយ, នាឡិកា, ម៉ាស៊ីនចាប់ផ្សែង) រួចយកកន្សែងគ្របពីលើ។";
+          }
+
+          // Trigger Alert (Vibrate, Beep, Voice & Log)
+          const now = Date.now();
+          if (now - lastAlertTime > 2500) {
+            lastAlertTime = now;
+            if (navigator.vibrate) navigator.vibrate([150, 80, 150]);
+            playAlarmBeep();
+            speakWarning("Camera detected! Check target area.");
+            appendDetectionLog(threatPercent);
+          }
+
+        } else {
+          targetMarker.style.display = 'none';
+          solutionCard.style.display = 'none';
+        }
+      }
+
+      requestAnimationFrame(runScannerAnalysis);
+    }
+
+    // Add Record to History Table
+    function appendDetectionLog(threat) {
+      if (recordedLogs === 0) logList.innerHTML = '';
+      recordedLogs++;
+      logCount.textContent = `${recordedLogs} Records`;
+
+      const li = document.createElement('li');
+      li.className = 'log-item';
+      const time = new Date().toLocaleTimeString('km-KH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      li.innerHTML = `<span><strong>ចំណុចសង្ស័យ #${recordedLogs}</strong> - ${time}</span><span style="color:var(--red)">${threat}%</span>`;
+      logList.prepend(li);
+      saveState();
+    }
+
+    // Toggle Flashlight
+    async function toggleFlashlight() {
+      if (!videoTrack) return;
+      try {
+        isTorchActive = !isTorchActive;
+        await videoTrack.applyConstraints({
+          advanced: [{ torch: isTorchActive }]
+        });
+        torchBtn.classList.toggle('active', isTorchActive);
+        fsTorchBtn.style.color = isTorchActive ? 'var(--cyan)' : '#fff';
+        saveState();
+      } catch (err) {
+        console.warn("Torch failed on this mobile device:", err);
+      }
+    }
+
+    // Toggle IR Filter
+    irEnhanceBtn.addEventListener('click', () => {
+      isIrActive = !isIrActive;
+      video.style.filter = isIrActive 
+        ? 'invert(0.95) contrast(260%) brightness(130%) hue-rotate(180deg)' 
+        : 'none';
+      irEnhanceBtn.classList.toggle('active', isIrActive);
+      saveState();
+    });
+
+    sensitivitySelect.addEventListener('change', saveState);
+
+    // Exit Mobile Fullscreen
+    function exitMobileFullscreen() {
+      viewfinder.classList.remove('mobile-fullscreen');
+    }
+
+    // Stop Everything
+    function shutdownCamera() {
+      isScanning = false;
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+        stream = null;
+        videoTrack = null;
+      }
+
+      exitMobileFullscreen();
+      viewfinder.classList.remove('active-scan');
+      targetMarker.style.display = 'none';
+      solutionCard.style.display = 'none';
+      video.style.filter = 'none';
+
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      irEnhanceBtn.disabled = true;
+      torchBtn.disabled = true;
+      irEnhanceBtn.classList.remove('active');
+      torchBtn.classList.remove('active');
+      isTorchActive = false;
+      isIrActive = false;
+    }
+
+    // Event Bindings
+    fsBackBtn.addEventListener('click', exitMobileFullscreen);
+    stopBtn.addEventListener('click', shutdownCamera);
+    torchBtn.addEventListener('click', toggleFlashlight);
+    fsTorchBtn.addEventListener('click', toggleFlashlight);
+    restoreState();
+  </script>
+</body>
+</html>
